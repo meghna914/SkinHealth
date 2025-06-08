@@ -1,51 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, AlertCircle, Info } from 'lucide-react';
+import { chatbotService, ChatMessage } from '../../services/chatbotService';
 
-type Message = {
-  id: string;
-  text: string;
-  sender: 'user' | 'bot';
-  timestamp: Date;
-};
+// Use the ChatMessage type from the service
+type Message = ChatMessage;
 
-// Mock response function (in a real app, this would call an API)
-const getMockBotResponse = async (message: string): Promise<string> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Simple keyword-based responses
-  const lowerMessage = message.toLowerCase();
-  
-  if (lowerMessage.includes('hello') || lowerMessage.includes('hi')) {
-    return "Hello! I'm your medical assistant. How can I help you today?";
+// Real AI response function using Google Gemini
+const getAIBotResponse = async (message: string, conversationHistory: Message[]): Promise<string> => {
+  try {
+    const response = await chatbotService.sendMessage(message, conversationHistory);
+
+    if (response.success && response.response) {
+      return response.response;
+    } else {
+      return response.response || "I'm sorry, but I'm having trouble processing your request right now. Please try again later.";
+    }
+  } catch (error) {
+    console.error('Error getting AI response:', error);
+    return "I'm experiencing technical difficulties right now. For medical concerns, please consult with a healthcare professional or use our Hospital Finder feature to locate specialists near you.";
   }
-  
-  if (lowerMessage.includes('eczema') || lowerMessage.includes('atopic dermatitis')) {
-    return "Eczema (atopic dermatitis) is a condition that makes your skin red and itchy. It's common in children but can occur at any age. Moisturizing regularly, avoiding harsh soaps, and using medicated creams or ointments can help manage symptoms. If your eczema is severe, you might need prescription medications.";
-  }
-  
-  if (lowerMessage.includes('psoriasis')) {
-    return "Psoriasis is a skin disease that causes red, itchy scaly patches, most commonly on the knees, elbows, trunk and scalp. Treatment typically involves creams, light therapy, and sometimes medications that reduce immune system activity. Lifestyle changes like reducing stress and not smoking may also help manage symptoms.";
-  }
-  
-  if (lowerMessage.includes('acne')) {
-    return "Acne is a skin condition that occurs when hair follicles plug with oil and dead skin cells. Treatments include over-the-counter products with ingredients like benzoyl peroxide or salicylic acid. For more severe acne, prescription medications may be necessary. It's important to be gentle with your skin and avoid picking or squeezing pimples.";
-  }
-  
-  if (lowerMessage.includes('rash') || lowerMessage.includes('itchy')) {
-    return "Skin rashes can be caused by many things, including allergies, medications, infections, and autoimmune conditions. If your rash is painful, widespread, or accompanied by fever, you should seek medical attention. For mild rashes, avoiding irritants and using over-the-counter hydrocortisone cream may help.";
-  }
-  
-  if (lowerMessage.includes('sunburn') || lowerMessage.includes('sun protection')) {
-    return "Sunburn is caused by overexposure to UV rays and can lead to skin damage and increased risk of skin cancer. To prevent sunburn, use broad-spectrum sunscreen with SPF 30 or higher, wear protective clothing, and limit sun exposure, especially between 10 AM and 4 PM. For treating sunburn, take cool baths, use moisturizers with aloe vera, and take anti-inflammatory medications if needed.";
-  }
-  
-  if (lowerMessage.includes('dermatologist') || lowerMessage.includes('doctor')) {
-    return "You should see a dermatologist if you have: persistent skin problems that don't respond to over-the-counter treatments, concerning changes in moles or skin growths, severe acne, unexplained hair loss, or painful rashes. The hospital finder feature in this app can help you locate dermatologists near you.";
-  }
-  
-  // Default response for unrecognized queries
-  return "I don't have specific information about that skin condition or question. For accurate diagnosis and treatment advice, please consult with a healthcare professional. You can use our Hospital Finder feature to locate specialists near you.";
 };
 
 const MedicalChatbot = () => {
@@ -59,50 +32,75 @@ const MedicalChatbot = () => {
   ]);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [shouldScroll, setShouldScroll] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // Auto-scroll to bottom of messages
+  // Controlled auto-scroll to bottom of messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (shouldScroll && messagesEndRef.current) {
+      // Use a small delay to ensure the message is rendered
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'end',
+          inline: 'nearest'
+        });
+        setShouldScroll(false); // Reset scroll flag
+      }, 150);
+    }
+  }, [shouldScroll, messages]);
   
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
-    
+
     const userMessage: Message = {
       id: Date.now().toString(),
       text: inputMessage,
       sender: 'user',
       timestamp: new Date(),
     };
-    
+
+    const currentInput = inputMessage;
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setIsTyping(true);
-    
+
+    // Trigger scroll after user message is added
+    setTimeout(() => setShouldScroll(true), 100);
+
     try {
-      const response = await getMockBotResponse(inputMessage);
-      
+      // Get conversation history for context (last 10 messages)
+      const conversationHistory = messages.slice(-10);
+      const response = await getAIBotResponse(currentInput, conversationHistory);
+
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
         text: response,
         sender: 'bot',
         timestamp: new Date(),
       };
-      
+
       setMessages(prev => [...prev, botMessage]);
+
+      // Trigger scroll after bot response is added
+      setTimeout(() => setShouldScroll(true), 200);
+
     } catch (error) {
       console.error('Error getting bot response:', error);
-      
+
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: "I'm sorry, but I'm having trouble processing your request right now. Please try again later.",
+        text: "I'm sorry, but I'm having trouble processing your request right now. Please try again later, or consult with a healthcare professional for urgent medical concerns.",
         sender: 'bot',
         timestamp: new Date(),
       };
-      
+
       setMessages(prev => [...prev, errorMessage]);
+
+      // Trigger scroll after error message is added
+      setTimeout(() => setShouldScroll(true), 200);
+
     } finally {
       setIsTyping(false);
     }
@@ -111,13 +109,48 @@ const MedicalChatbot = () => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      e.stopPropagation();
+
+      // Prevent any default scrolling behavior
+      const target = e.target as HTMLElement;
+      target.blur();
+
       handleSendMessage();
+
+      // Refocus after a short delay
+      setTimeout(() => {
+        target.focus();
+      }, 50);
     }
   };
   
   // Format timestamp
   const formatTimestamp = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // Format message text to handle basic markdown-style formatting
+  const formatMessageText = (text: string) => {
+    // Escape HTML first to prevent XSS
+    let formattedText = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // Replace **bold** with <strong> tags (non-greedy)
+    formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight: 600; color: #1f2937;">$1</strong>');
+
+    // Replace *italic* with <em> tags (but not if it's part of **)
+    formattedText = formattedText.replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, '<em style="font-style: italic;">$1</em>');
+
+    // Replace line breaks with proper spacing
+    formattedText = formattedText.replace(/\n\n/g, '<br><br>');
+    formattedText = formattedText.replace(/\n/g, '<br>');
+
+    // Clean up any remaining asterisks that weren't part of formatting
+    formattedText = formattedText.replace(/\*+/g, '');
+
+    return formattedText;
   };
 
   return (
@@ -166,7 +199,14 @@ const MedicalChatbot = () => {
                     {formatTimestamp(message.timestamp)}
                   </span>
                 </div>
-                <p className="whitespace-pre-wrap">{message.text}</p>
+                <div
+                  className="whitespace-pre-wrap max-w-none"
+                  style={{
+                    lineHeight: '1.6',
+                    fontSize: '14px',
+                  }}
+                  dangerouslySetInnerHTML={{ __html: formatMessageText(message.text) }}
+                />
               </div>
             </div>
           ))}
@@ -199,13 +239,17 @@ const MedicalChatbot = () => {
       
       {/* Input area */}
       <div className="border border-slate-200 rounded-b-lg bg-white p-3 flex items-end">
-        <textarea 
+        <textarea
           value={inputMessage}
           onChange={e => setInputMessage(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Type your medical question here..."
           className="flex-1 resize-none border-0 bg-transparent p-2 focus:ring-0 focus:outline-none text-slate-900 placeholder:text-slate-400"
           rows={2}
+          style={{
+            scrollBehavior: 'auto',
+            overflowY: 'hidden'
+          }}
         />
         <button 
           onClick={handleSendMessage}

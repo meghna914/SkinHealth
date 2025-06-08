@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Integration Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { border-color: #4CAF50; background-color: #f0f8f0; }
+        .error { border-color: #f44336; background-color: #fdf0f0; }
+        .loading { border-color: #2196F3; background-color: #f0f4f8; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .response {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+        }
+        input[type="text"] {
+            width: 70%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SkinHealth AI Chatbot Integration Test</h1>
+        <p>This page tests the integration between the frontend and backend chatbot API.</p>
+        
+        <div id="health-check" class="test-section loading">
+            <h3>1. Backend Health Check</h3>
+            <p>Testing if the backend API is running...</p>
+            <button onclick="testHealthCheck()">Test Health Check</button>
+            <div id="health-result"></div>
+        </div>
+        
+        <div id="config-check" class="test-section loading">
+            <h3>2. API Configuration Check</h3>
+            <p>Testing if the chatbot API is properly configured...</p>
+            <button onclick="testConfigCheck()">Test Configuration</button>
+            <div id="config-result"></div>
+        </div>
+        
+        <div id="ai-test" class="test-section loading">
+            <h3>3. Google AI Integration Test</h3>
+            <p>Testing if Google Gemini AI is working...</p>
+            <button onclick="testAI()">Test AI Integration</button>
+            <div id="ai-result"></div>
+        </div>
+
+        <div id="chatbot-test" class="test-section loading">
+            <h3>4. Chatbot Message Test</h3>
+            <p>Testing the chatbot functionality with custom message...</p>
+            <input type="text" id="test-message" placeholder="Enter a test message (e.g., 'What is eczema?')" value="What is eczema?">
+            <button onclick="testChatbot()">Send Test Message</button>
+            <div id="chatbot-result"></div>
+        </div>
+        
+        <div id="integration-status" class="test-section loading">
+            <h3>Integration Status</h3>
+            <div id="status-result">
+                <p>Run the tests above to check integration status.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        
+        async function testHealthCheck() {
+            const section = document.getElementById('health-check');
+            const result = document.getElementById('health-result');
+            
+            try {
+                section.className = 'test-section loading';
+                result.innerHTML = '<p>Testing...</p>';
+                
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    section.className = 'test-section success';
+                    result.innerHTML = `
+                        <div class="response">
+                            <strong>✅ Success!</strong><br>
+                            Message: ${data.message}<br>
+                            Version: ${data.version}<br>
+                            Features: ${data.features.join(', ')}
+                        </div>
+                    `;
+                } else {
+                    throw new Error('Health check failed');
+                }
+            } catch (error) {
+                section.className = 'test-section error';
+                result.innerHTML = `<div class="response"><strong>❌ Error:</strong> ${error.message}</div>`;
+            }
+        }
+        
+        async function testConfigCheck() {
+            const section = document.getElementById('config-check');
+            const result = document.getElementById('config-result');
+
+            try {
+                section.className = 'test-section loading';
+                result.innerHTML = '<p>Testing...</p>';
+
+                const response = await fetch(`${API_BASE}/config`);
+                const data = await response.json();
+
+                if (data.success) {
+                    section.className = 'test-section success';
+                    result.innerHTML = `
+                        <div class="response">
+                            <strong>✅ Configuration OK!</strong><br>
+                            Google Places API: ${data.google_places_api_configured ? '✅' : '❌'}<br>
+                            Distance Matrix API: ${data.google_distance_matrix_api_configured ? '✅' : '❌'}<br>
+                            AI Chatbot: ${data.google_ai_chatbot_configured ? '✅' : '❌'}<br>
+                            Message: ${data.message}
+                        </div>
+                    `;
+                } else {
+                    throw new Error('Configuration check failed');
+                }
+            } catch (error) {
+                section.className = 'test-section error';
+                result.innerHTML = `<div class="response"><strong>❌ Error:</strong> ${error.message}</div>`;
+            }
+        }
+
+        async function testAI() {
+            const section = document.getElementById('ai-test');
+            const result = document.getElementById('ai-result');
+
+            try {
+                section.className = 'test-section loading';
+                result.innerHTML = '<p>Testing Google AI integration...</p>';
+
+                const response = await fetch(`${API_BASE}/chatbot/test`);
+                const data = await response.json();
+
+                if (data.success) {
+                    section.className = 'test-section success';
+                    result.innerHTML = `
+                        <div class="response">
+                            <strong>✅ Google AI Integration Working!</strong><br><br>
+                            <strong>Test Message:</strong> ${data.test_message}<br><br>
+                            <strong>AI Response:</strong><br>
+                            ${data.response}<br><br>
+                            <strong>API Key Configured:</strong> ${data.api_key_configured ? '✅' : '❌'}
+                        </div>
+                    `;
+                } else {
+                    throw new Error(data.error || 'AI test failed');
+                }
+            } catch (error) {
+                section.className = 'test-section error';
+                result.innerHTML = `<div class="response"><strong>❌ Error:</strong> ${error.message}</div>`;
+            }
+        }
+        
+        async function testChatbot() {
+            const section = document.getElementById('chatbot-test');
+            const result = document.getElementById('chatbot-result');
+            const message = document.getElementById('test-message').value;
+            
+            if (!message.trim()) {
+                alert('Please enter a test message');
+                return;
+            }
+            
+            try {
+                section.className = 'test-section loading';
+                result.innerHTML = '<p>Sending message to AI chatbot...</p>';
+                
+                const response = await fetch(`${API_BASE}/chatbot/message`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        conversation_history: []
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.response) {
+                    section.className = 'test-section success';
+                    result.innerHTML = `
+                        <div class="response">
+                            <strong>✅ AI Response Received!</strong><br><br>
+                            <strong>Your message:</strong> ${message}<br><br>
+                            <strong>AI Response:</strong><br>
+                            ${data.response}
+                        </div>
+                    `;
+                } else {
+                    throw new Error(data.error || 'No response received');
+                }
+            } catch (error) {
+                section.className = 'test-section error';
+                result.innerHTML = `<div class="response"><strong>❌ Error:</strong> ${error.message}</div>`;
+            }
+        }
+        
+        function updateIntegrationStatus() {
+            const healthSection = document.getElementById('health-check');
+            const configSection = document.getElementById('config-check');
+            const aiSection = document.getElementById('ai-test');
+            const chatbotSection = document.getElementById('chatbot-test');
+            const statusSection = document.getElementById('integration-status');
+            const statusResult = document.getElementById('status-result');
+
+            const healthOK = healthSection.classList.contains('success');
+            const configOK = configSection.classList.contains('success');
+            const aiOK = aiSection.classList.contains('success');
+            const chatbotOK = chatbotSection.classList.contains('success');
+
+            if (healthOK && configOK && aiOK && chatbotOK) {
+                statusSection.className = 'test-section success';
+                statusResult.innerHTML = `
+                    <div class="response">
+                        <strong>🎉 Integration Successful!</strong><br>
+                        All components are working correctly:<br>
+                        ✅ Backend API is running<br>
+                        ✅ All APIs are configured<br>
+                        ✅ Google AI integration working<br>
+                        ✅ Chatbot is responding<br><br>
+                        Your SkinHealth chatbot integration is ready to use!
+                    </div>
+                `;
+            } else if (healthSection.classList.contains('error') || configSection.classList.contains('error') || aiSection.classList.contains('error') || chatbotSection.classList.contains('error')) {
+                statusSection.className = 'test-section error';
+                statusResult.innerHTML = `
+                    <div class="response">
+                        <strong>⚠️ Integration Issues Detected</strong><br>
+                        Please check the failed tests above and ensure:<br>
+                        • Backend server is running (python backend/app.py)<br>
+                        • All required Python packages are installed (pip install -r requirements.txt)<br>
+                        • API keys are correctly configured<br>
+                        • Network connectivity is available<br>
+                        • Google AI API key has proper permissions
+                    </div>
+                `;
+            }
+        }
+        
+        // Update status when sections change
+        const observer = new MutationObserver(updateIntegrationStatus);
+        observer.observe(document.getElementById('health-check'), { attributes: true });
+        observer.observe(document.getElementById('config-check'), { attributes: true });
+        observer.observe(document.getElementById('ai-test'), { attributes: true });
+        observer.observe(document.getElementById('chatbot-test'), { attributes: true });
+        
+        // Auto-run health check on page load
+        window.addEventListener('load', () => {
+            setTimeout(testHealthCheck, 1000);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Finder API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .result {
+            background: #f5f5f5;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            white-space: pre-wrap;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .hospital {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>Hospital Finder API Test</h1>
+    
+    <div>
+        <h2>Test API Health</h2>
+        <button onclick="testHealth()">Test Health Endpoint</button>
+        <div id="health-result" class="result"></div>
+    </div>
+
+    <div>
+        <h2>Test Hospital Search</h2>
+        <p>Click to test different locations:</p>
+        <button onclick="testNYC()">Test NYC (Manhattan)</button>
+        <button onclick="testLA()">Test Los Angeles</button>
+        <button onclick="testChicago()">Test Chicago</button>
+        <button onclick="getCurrentLocation()">Use My Location</button>
+        <div id="search-result" class="result"></div>
+        <div id="hospitals-list"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+
+        async function testHealth() {
+            const resultDiv = document.getElementById('health-result');
+            resultDiv.innerHTML = '<div class="loading">Testing health endpoint...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                resultDiv.innerHTML = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.innerHTML = `Error: ${error.message}`;
+            }
+        }
+
+        async function searchHospitals(lat, lng, locationName) {
+            const resultDiv = document.getElementById('search-result');
+            const hospitalsDiv = document.getElementById('hospitals-list');
+            
+            resultDiv.innerHTML = `<div class="loading">Searching hospitals near ${locationName}...</div>`;
+            hospitalsDiv.innerHTML = '';
+            
+            try {
+                const response = await fetch(`${API_BASE}/hospitals/nearby`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        lat: lat, 
+                        lng: lng,
+                        radius: 25000  // 25km radius
+                    }),
+                });
+                
+                const data = await response.json();
+                resultDiv.innerHTML = `Found ${data.count} hospitals near ${locationName}`;
+                
+                if (data.success && data.data.length > 0) {
+                    hospitalsDiv.innerHTML = data.data.map((hospital, index) => `
+                        <div class="hospital">
+                            <h3>${index + 1}. ${hospital.name}</h3>
+                            <p><strong>Address:</strong> ${hospital.address}</p>
+                            <p><strong>Distance:</strong> ${hospital.distance} km away</p>
+                        </div>
+                    `).join('');
+                } else {
+                    hospitalsDiv.innerHTML = '<p>No hospitals found in this area.</p>';
+                }
+                
+            } catch (error) {
+                resultDiv.innerHTML = `Error: ${error.message}`;
+            }
+        }
+
+        function testNYC() {
+            searchHospitals(40.7831, -73.9712, 'NYC (Upper East Side)');
+        }
+
+        function testLA() {
+            searchHospitals(34.0522, -118.2437, 'Los Angeles');
+        }
+
+        function testChicago() {
+            searchHospitals(41.8781, -87.6298, 'Chicago');
+        }
+
+        function getCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        searchHospitals(lat, lng, 'Your Location');
+                    },
+                    (error) => {
+                        document.getElementById('search-result').innerHTML = `Geolocation error: ${error.message}`;
+                    }
+                );
+            } else {
+                document.getElementById('search-result').innerHTML = 'Geolocation is not supported by this browser.';
+            }
+        }
+
+        // Test health on page load
+        window.onload = function() {
+            testHealth();
+        };
+    </script>
+</body>
+</html>

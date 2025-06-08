@@ -246,7 +246,7 @@ const LandingPage = () => {
               </div>
               <h3 className="text-xl font-bold mb-3">Medical Chatbot</h3>
               <p className="text-slate-600 mb-4">
-                Get answers to your health-related questions from our AI-powered medical assistant trained on the latest medical knowledge.
+                Get answers to your health-related questions from our medical assistant trained on the latest medical knowledge.
               </p>
               <ul className="space-y-2 mb-6">
                 <li className="flex items-start">

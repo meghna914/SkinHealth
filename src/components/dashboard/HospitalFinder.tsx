@@ -1,487 +1,454 @@
 import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import { MapPin, Navigation, Phone, Globe, Clock, Star } from 'lucide-react';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import { MapPin, Star, Navigation, Clock, Search } from 'lucide-react';
 
-// Fix Leaflet icon issue
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-// Type for the hospital data
+// Enhanced hospital type with Google Places data and accurate distances
 type Hospital = {
-  id: number;
+  id: string;
   name: string;
   lat: number;
   lng: number;
   address: string;
-  phone: string;
-  website: string;
-  specialties: string[];
-  rating: number;
-  hours: string;
-  distance?: number; // Distance from user's location in km
+  distance?: number;
+  distance_text?: string;
+  duration_text?: string;
+  directions_url?: string;
+  rating?: number;
+  user_ratings_total?: number;
+  place_id?: string;
+  types?: string[];
 };
 
-// Mock hospital data
-const mockHospitals: Hospital[] = [
-  {
-    id: 1,
-    name: "City General Hospital",
-    lat: 40.7128,
-    lng: -74.006,
-    address: "123 Healthcare Ave, New York, NY",
-    phone: "+1 (212) 555-1234",
-    website: "https://citygeneralhospital.org",
-    specialties: ["Dermatology", "General Medicine", "Pediatrics"],
-    rating: 4.2,
-    hours: "Mon-Fri: 8AM-8PM, Sat-Sun: 10AM-6PM",
-  },
-  {
-    id: 2,
-    name: "Westside Medical Center",
-    lat: 40.7138,
-    lng: -74.016,
-    address: "456 Medical Blvd, New York, NY",
-    phone: "+1 (212) 555-5678",
-    website: "https://westsidemedical.org",
-    specialties: ["Dermatology", "Oncology", "Cardiology"],
-    rating: 4.5,
-    hours: "24/7",
-  },
-  {
-    id: 3,
-    name: "Eastside Clinic",
-    lat: 40.7148,
-    lng: -73.996,
-    address: "789 Health St, New York, NY",
-    phone: "+1 (212) 555-9012",
-    website: "https://eastsideclinic.org",
-    specialties: ["Dermatology", "Allergy & Immunology"],
-    rating: 3.9,
-    hours: "Mon-Fri: 9AM-5PM",
-  },
-  {
-    id: 4,
-    name: "Uptown Dermatology Center",
-    lat: 40.7218,
-    lng: -73.986,
-    address: "321 Skin Care Ln, New York, NY",
-    phone: "+1 (212) 555-3456",
-    website: "https://uptownderm.org",
-    specialties: ["Dermatology"],
-    rating: 4.8,
-    hours: "Mon-Fri: 8AM-6PM, Sat: 10AM-2PM",
-  },
-  {
-    id: 5,
-    name: "Downtown Health Clinic",
-    lat: 40.7058,
-    lng: -74.016,
-    address: "555 Wellness Way, New York, NY",
-    phone: "+1 (212) 555-7890",
-    website: "https://downtownhealth.org",
-    specialties: ["General Medicine", "Dermatology", "Mental Health"],
-    rating: 4.0,
-    hours: "Mon-Fri: 7AM-7PM",
-  },
-];
 
-// Component to recenter map when user location changes
-const RecenterMap = ({ position }: { position: [number, number] }) => {
-  const map = useMap();
-  useEffect(() => {
-    map.setView(position, 13);
-  }, [position, map]);
-  return null;
-};
+
+// API base URL
+const API_BASE_URL = 'http://localhost:5000/api';
 
 const HospitalFinder = () => {
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [specialtyFilter, setSpecialtyFilter] = useState('');
-  const [selectedHospital, setSelectedHospital] = useState<Hospital | null>(null);
   const [nearbyHospitals, setNearbyHospitals] = useState<Hospital[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [manualLocation, setManualLocation] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
 
-  // Get user's location
-  const getUserLocation = () => {
-    setLoading(true);
-    setError(null);
-    
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          setUserLocation([latitude, longitude]);
-          findNearbyHospitals([latitude, longitude]);
-          setLoading(false);
+  // Fetch nearby hospitals from API
+  const fetchNearbyHospitals = async (lat: number, lng: number) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/hospitals/nearby`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        (err) => {
-          console.error('Error getting location:', err);
-          setError('Unable to access your location. Please allow location access or enter a location manually.');
-          setLoading(false);
-          
-          // Default to New York City if location access is denied
-          const defaultLocation: [number, number] = [40.7128, -74.006];
-          setUserLocation(defaultLocation);
-          findNearbyHospitals(defaultLocation);
+        body: JSON.stringify({
+          lat,
+          lng,
+          radius: 25000  // 25km search radius
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        setNearbyHospitals(result.data);
+        if (result.data.length === 0) {
+          setError('No hospitals found within 25km of your location. Try a different area.');
         }
-      );
-    } else {
-      setError('Geolocation is not supported by your browser');
-      setLoading(false);
-      
-      // Default to New York City
-      const defaultLocation: [number, number] = [40.7128, -74.006];
-      setUserLocation(defaultLocation);
-      findNearbyHospitals(defaultLocation);
+      } else {
+        throw new Error(result.error || 'Failed to fetch hospitals');
+      }
+    } catch (err: any) {
+      console.error('Error fetching hospitals:', err);
+      if (err.message.includes('Failed to fetch')) {
+        setError('Unable to connect to the hospital finder service. Please make sure the backend is running.');
+      } else {
+        setError(`Failed to load nearby hospitals: ${err.message}`);
+      }
     }
   };
 
-  // Calculate distance between two coordinates (in km)
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371; // Radius of the earth in km
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
-    const a = 
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
-      Math.sin(dLon / 2) * Math.sin(dLon / 2); 
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
-    const distance = R * c; // Distance in km
-    return distance;
+  // Get user's current location with enhanced error handling and fallbacks
+  const getUserLocation = async () => {
+    setLoading(true);
+    setError(null);
+    setNearbyHospitals([]);
+
+    // Check if we're on HTTPS (required for geolocation in production)
+    const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
+
+    if (!isSecure && window.location.hostname !== 'localhost') {
+      setError('Location access requires HTTPS. Please use a secure connection.');
+      setLoading(false);
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser. Trying IP-based location...');
+      await tryIPBasedLocation();
+      return;
+    }
+
+    // Enhanced geolocation options
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000, // 10 seconds
+      maximumAge: 300000 // 5 minutes cache
+    };
+
+    try {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+
+          console.log(`Location found: ${latitude}, ${longitude} (accuracy: ${accuracy}m)`);
+
+          // Validate coordinates
+          if (isValidCoordinates(latitude, longitude)) {
+            const userCoords: [number, number] = [latitude, longitude];
+            setUserLocation(userCoords);
+
+            // Fetch hospitals from API
+            await fetchNearbyHospitals(latitude, longitude);
+            setLoading(false);
+          } else {
+            throw new Error('Invalid coordinates received');
+          }
+        },
+        async (err) => {
+          console.error('Geolocation error:', err);
+
+          let errorMessage = 'Unable to access your location. ';
+
+          switch (err.code) {
+            case err.PERMISSION_DENIED:
+              errorMessage += 'Please allow location access and try again.';
+              break;
+            case err.POSITION_UNAVAILABLE:
+              errorMessage += 'Location information is unavailable. Trying IP-based location...';
+              await tryIPBasedLocation();
+              return;
+            case err.TIMEOUT:
+              errorMessage += 'Location request timed out. Trying IP-based location...';
+              await tryIPBasedLocation();
+              return;
+            default:
+              errorMessage += 'An unknown error occurred. Trying IP-based location...';
+              await tryIPBasedLocation();
+              return;
+          }
+
+          setError(errorMessage);
+          setLoading(false);
+        },
+        options
+      );
+    } catch (error) {
+      console.error('Geolocation setup error:', error);
+      await tryIPBasedLocation();
+    }
   };
 
-  // Find nearby hospitals based on user location
-  const findNearbyHospitals = (location: [number, number]) => {
-    const [userLat, userLng] = location;
-    
-    // Calculate distance for each hospital
-    const hospitalsWithDistance = mockHospitals.map(hospital => {
-      const distance = calculateDistance(userLat, userLng, hospital.lat, hospital.lng);
-      return { ...hospital, distance };
-    });
-    
-    // Sort by distance
-    const sortedHospitals = hospitalsWithDistance.sort((a, b) => 
-      (a.distance || 0) - (b.distance || 0)
-    );
-    
-    setNearbyHospitals(sortedHospitals);
-  };
-
-  // Get user location on component mount
-  useEffect(() => {
-    getUserLocation();
-  }, []);
-
-  // Filter hospitals by search term and specialty
-  const filteredHospitals = nearbyHospitals.filter(hospital => {
-    const matchesSearch = hospital.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           hospital.address.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesSpecialty = specialtyFilter === '' || 
-                            hospital.specialties.some(s => s.toLowerCase() === specialtyFilter.toLowerCase());
-    
-    return matchesSearch && matchesSpecialty;
-  });
-
-  // Extract unique specialties for filter dropdown
-  const allSpecialties = Array.from(
-    new Set(
-      nearbyHospitals.flatMap(hospital => hospital.specialties)
-    )
-  ).sort();
-
-  // Render star rating
-  const renderRating = (rating: number) => {
+  // Validate coordinates
+  const isValidCoordinates = (lat: number, lng: number): boolean => {
     return (
-      <div className="flex items-center">
-        {[...Array(5)].map((_, i) => (
-          <Star 
-            key={i} 
-            className={`h-4 w-4 ${i < Math.floor(rating) ? 'text-warning-500 fill-warning-500' : 'text-slate-300'}`} 
-          />
-        ))}
-        <span className="ml-1 text-sm text-slate-600">{rating.toFixed(1)}</span>
-      </div>
+      typeof lat === 'number' &&
+      typeof lng === 'number' &&
+      lat >= -90 && lat <= 90 &&
+      lng >= -180 && lng <= 180 &&
+      !isNaN(lat) && !isNaN(lng)
     );
   };
+
+  // IP-based location fallback
+  const tryIPBasedLocation = async () => {
+    try {
+      console.log('Attempting IP-based geolocation...');
+
+      // Try multiple IP geolocation services
+      const services = [
+        'https://ipapi.co/json/',
+        'https://ipinfo.io/json',
+        'https://api.ipify.org?format=json' // This one only gives IP, we'd need another call
+      ];
+
+      for (const serviceUrl of services) {
+        try {
+          const response = await fetch(serviceUrl);
+          if (!response.ok) continue;
+
+          const data = await response.json();
+
+          let latitude, longitude;
+
+          // Handle different API response formats
+          if (data.latitude && data.longitude) {
+            // ipapi.co format
+            latitude = parseFloat(data.latitude);
+            longitude = parseFloat(data.longitude);
+          } else if (data.loc) {
+            // ipinfo.io format
+            const [lat, lng] = data.loc.split(',');
+            latitude = parseFloat(lat);
+            longitude = parseFloat(lng);
+          } else {
+            continue; // Try next service
+          }
+
+          if (isValidCoordinates(latitude, longitude)) {
+            console.log(`IP-based location found: ${latitude}, ${longitude} (${data.city || 'Unknown city'})`);
+
+            const userCoords: [number, number] = [latitude, longitude];
+            setUserLocation(userCoords);
+
+            // Show info that this is IP-based (less accurate)
+            setError(`Using approximate location based on your IP address (${data.city || 'Unknown city'}). For better accuracy, please allow GPS access.`);
+
+            // Fetch hospitals from API
+            await fetchNearbyHospitals(latitude, longitude);
+            setLoading(false);
+            return;
+          }
+        } catch (serviceError) {
+          console.error(`Error with ${serviceUrl}:`, serviceError);
+          continue;
+        }
+      }
+
+      // If all services fail, use a default location (you can customize this)
+      setError('Unable to determine your location. Please allow location access or check your internet connection.');
+      setLoading(false);
+
+    } catch (error) {
+      console.error('IP-based geolocation failed:', error);
+      setError('Unable to determine your location. Please allow location access or check your internet connection.');
+      setLoading(false);
+    }
+  };
+
+  // Manual location search using geocoding
+  const searchManualLocation = async () => {
+    if (!manualLocation.trim()) {
+      setError('Please enter a location (e.g., "New York, NY" or "Bangalore, India")');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setNearbyHospitals([]);
+
+    try {
+      // Use a free geocoding service
+      const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(manualLocation)}&limit=1`;
+
+      const response = await fetch(geocodeUrl);
+      const data = await response.json();
+
+      if (data && data.length > 0) {
+        const latitude = parseFloat(data[0].lat);
+        const longitude = parseFloat(data[0].lon);
+
+        if (isValidCoordinates(latitude, longitude)) {
+          console.log(`Manual location found: ${latitude}, ${longitude} for "${manualLocation}"`);
+
+          const userCoords: [number, number] = [latitude, longitude];
+          setUserLocation(userCoords);
+
+          // Fetch hospitals from API
+          await fetchNearbyHospitals(latitude, longitude);
+          setLoading(false);
+          setShowManualInput(false);
+        } else {
+          throw new Error('Invalid coordinates from geocoding');
+        }
+      } else {
+        setError(`Location "${manualLocation}" not found. Please try a different location or be more specific.`);
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('Manual location search error:', error);
+      setError(`Unable to find location "${manualLocation}". Please check the spelling and try again.`);
+      setLoading(false);
+    }
+  };
+
+  // Don't auto-load on mount, let user click the button
+  // useEffect(() => {
+  //   getUserLocation();
+  // }, []);
+
+
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Hospital Finder</h2>
-      
-      <div className="mb-6 space-y-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1">
-            <label htmlFor="search" className="block text-sm font-medium text-slate-700 mb-1">
-              Search Hospitals
-            </label>
-            <input
-              id="search"
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by name or address"
-              className="input w-full"
-            />
-          </div>
-          
-          <div className="md:w-1/3">
-            <label htmlFor="specialty" className="block text-sm font-medium text-slate-700 mb-1">
-              Filter by Specialty
-            </label>
-            <select
-              id="specialty"
-              value={specialtyFilter}
-              onChange={(e) => setSpecialtyFilter(e.target.value)}
-              className="input w-full"
-            >
-              <option value="">All Specialties</option>
-              {allSpecialties.map(specialty => (
-                <option key={specialty} value={specialty}>{specialty}</option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="md:w-auto self-end">
-            <button 
-              onClick={getUserLocation}
-              disabled={loading}
-              className="btn btn-primary w-full md:w-auto"
-            >
-              <Navigation className="h-5 w-5 mr-2" />
-              {loading ? 'Getting Location...' : 'Use My Location'}
-            </button>
-          </div>
+      <h2 className="text-2xl font-bold mb-6">Nearest Hospitals</h2>
+      <p className="text-slate-600 mb-6">
+        Find hospitals and medical centers near your current location. Results are automatically sorted by distance with accurate driving distances, ratings, and turn-by-turn directions powered by Google Maps.
+      </p>
+
+      <div className="mb-6">
+        <div className="flex flex-col sm:flex-row gap-3 mb-4">
+          <button
+            onClick={getUserLocation}
+            disabled={loading}
+            className="btn btn-primary flex-1"
+          >
+            <MapPin className="h-5 w-5 mr-2" />
+            {loading ? 'Finding Hospitals...' : 'Use My Current Location'}
+          </button>
+
+          <button
+            onClick={() => setShowManualInput(!showManualInput)}
+            disabled={loading}
+            className="btn btn-secondary flex-1"
+          >
+            <Search className="h-5 w-5 mr-2" />
+            Search by Location
+          </button>
         </div>
-        
+
+        {/* Manual location input */}
+        {showManualInput && (
+          <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-md">
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Enter Location
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={manualLocation}
+                onChange={(e) => setManualLocation(e.target.value)}
+                placeholder="e.g., New York, NY or Bangalore, India"
+                className="flex-1 px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                onKeyPress={(e) => e.key === 'Enter' && searchManualLocation()}
+                disabled={loading}
+              />
+              <button
+                onClick={searchManualLocation}
+                disabled={loading || !manualLocation.trim()}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Search
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Enter a city, address, or landmark to find hospitals in that area
+            </p>
+          </div>
+        )}
+
         {error && (
-          <div className="bg-error-50 border border-error-200 rounded-md p-3 text-sm text-error-800">
-            {error}
+          <div className="mt-4 bg-error-50 border border-error-200 rounded-md p-3 text-sm text-error-800">
+            <strong>Error:</strong> {error}
+            <div className="mt-2 text-xs">
+              💡 <strong>Tip:</strong> Please allow location access when prompted by your browser.
+            </div>
+          </div>
+        )}
+
+        {userLocation && (
+          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
+            <div className="text-sm text-green-800">
+              📍 <strong>Your Location:</strong> {userLocation[0].toFixed(4)}, {userLocation[1].toFixed(4)}
+            </div>
+            {nearbyHospitals.length > 0 && (
+              <div className="text-sm text-green-700 mt-1">
+                ✅ Found {nearbyHospitals.length} hospitals near you, sorted by distance
+              </div>
+            )}
           </div>
         )}
       </div>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Hospital list */}
-        <div className="lg:col-span-1 order-2 lg:order-1 h-[400px] lg:h-[600px] overflow-y-auto pr-2">
-          {filteredHospitals.length === 0 ? (
-            <div className="text-center py-8">
-              <MapPin className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-slate-700 mb-1">No hospitals found</h3>
-              <p className="text-slate-500">
-                Try adjusting your search or filters to find more results
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {filteredHospitals.map(hospital => (
-                <div 
-                  key={hospital.id}
-                  className={`rounded-lg p-4 cursor-pointer transition-all ${
-                    selectedHospital?.id === hospital.id 
-                      ? 'bg-primary-50 border border-primary-200 shadow-sm' 
-                      : 'bg-white border border-slate-200 hover:border-primary-200 hover:shadow-sm'
-                  }`}
-                  onClick={() => setSelectedHospital(hospital)}
-                >
-                  <h3 className="font-semibold text-lg mb-1">{hospital.name}</h3>
-                  <p className="text-slate-600 text-sm mb-2">{hospital.address}</p>
-                  
-                  <div className="flex items-center text-sm text-slate-500 mb-2">
-                    <MapPin className="h-4 w-4 mr-1 text-primary-500" />
-                    <span>
-                      {hospital.distance !== undefined 
-                        ? `${hospital.distance.toFixed(1)} km away` 
-                        : 'Distance unknown'}
-                    </span>
-                  </div>
-                  
-                  <div className="mb-2">
-                    {renderRating(hospital.rating)}
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {hospital.specialties.map(specialty => (
-                      <span 
-                        key={specialty} 
-                        className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-xs"
-                      >
-                        {specialty}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
-        {/* Map */}
-        <div className="lg:col-span-2 order-1 lg:order-2 h-[300px] lg:h-[600px] rounded-lg overflow-hidden border border-slate-200">
-          {userLocation ? (
-            <MapContainer 
-              center={userLocation} 
-              zoom={13} 
-              style={{ height: '100%', width: '100%' }}
-            >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              
-              {/* User marker */}
-              <Marker position={userLocation}>
-                <Popup>
-                  Your location
-                </Popup>
-              </Marker>
-              
-              {/* Hospital markers */}
-              {filteredHospitals.map(hospital => (
-                <Marker 
-                  key={hospital.id}
-                  position={[hospital.lat, hospital.lng]}
-                  eventHandlers={{
-                    click: () => {
-                      setSelectedHospital(hospital);
-                    },
-                  }}
-                >
-                  <Popup>
-                    <div>
-                      <h3 className="font-semibold">{hospital.name}</h3>
-                      <p className="text-sm">{hospital.address}</p>
-                      {hospital.distance !== undefined && (
-                        <p className="text-sm text-slate-600">
-                          {hospital.distance.toFixed(1)} km away
-                        </p>
-                      )}
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-              
-              {/* Recenter map when user location changes */}
-              <RecenterMap position={userLocation} />
-            </MapContainer>
-          ) : (
-            <div className="flex items-center justify-center h-full bg-slate-50">
-              <div className="text-center">
-                <MapPin className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                <p className="text-slate-700">
-                  {loading ? 'Getting your location...' : 'Allow location access to view the map'}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      {/* Selected hospital details */}
-      {selectedHospital && (
-        <div className="mt-6 bg-white rounded-lg border border-slate-200 p-6 animate-fade-in">
-          <div className="flex justify-between items-start">
-            <div>
-              <h3 className="text-xl font-bold mb-1">{selectedHospital.name}</h3>
-              <p className="text-slate-600">{selectedHospital.address}</p>
-            </div>
-            <button 
-              onClick={() => setSelectedHospital(null)} 
-              className="text-slate-400 hover:text-slate-600"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-            <div className="flex items-start">
-              <Phone className="h-5 w-5 text-primary-600 mr-3 mt-0.5" />
-              <div>
-                <p className="text-sm text-slate-500">Phone</p>
-                <p className="font-medium">{selectedHospital.phone}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-start">
-              <Globe className="h-5 w-5 text-primary-600 mr-3 mt-0.5" />
-              <div>
-                <p className="text-sm text-slate-500">Website</p>
-                <a 
-                  href={selectedHospital.website} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="font-medium text-primary-600 hover:text-primary-700 hover:underline"
-                >
-                  Visit website
-                </a>
-              </div>
-            </div>
-            
-            <div className="flex items-start">
-              <Clock className="h-5 w-5 text-primary-600 mr-3 mt-0.5" />
-              <div>
-                <p className="text-sm text-slate-500">Hours</p>
-                <p className="font-medium">{selectedHospital.hours}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-start">
-              <Star className="h-5 w-5 text-primary-600 mr-3 mt-0.5" />
-              <div>
-                <p className="text-sm text-slate-500">Rating</p>
-                <div className="mt-1">
-                  {renderRating(selectedHospital.rating)}
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="mt-4">
-            <p className="text-sm text-slate-500 mb-2">Specialties</p>
-            <div className="flex flex-wrap gap-2">
-              {selectedHospital.specialties.map(specialty => (
-                <span 
-                  key={specialty} 
-                  className="bg-primary-50 text-primary-700 px-3 py-1 rounded-full text-sm"
-                >
-                  {specialty}
-                </span>
-              ))}
-            </div>
-          </div>
-          
-          <div className="mt-6 flex flex-wrap gap-3">
-            <a 
-              href={`https://www.google.com/maps/dir/?api=1&destination=${selectedHospital.lat},${selectedHospital.lng}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-primary inline-flex items-center"
-            >
-              <Navigation className="h-5 w-5 mr-2" />
-              Get Directions
-            </a>
-            
-            <a 
-              href={`tel:${selectedHospital.phone}`}
-              className="btn btn-outline inline-flex items-center"
-            >
-              <Phone className="h-5 w-5 mr-2" />
-              Call
-            </a>
-          </div>
+      {/* Hospital list */}
+      {nearbyHospitals.length > 0 && (
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">
+            Hospitals Near You (Sorted by Distance)
+          </h3>
+          <p className="text-sm text-slate-600">
+            Showing {nearbyHospitals.length} hospitals within 25km of your location
+          </p>
         </div>
       )}
+
+      <div className="space-y-4">
+        {nearbyHospitals.length === 0 && !loading ? (
+          <div className="text-center py-8">
+            <MapPin className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-slate-700 mb-1">No hospitals found</h3>
+            <p className="text-slate-500">
+              Click "Find Nearest Hospitals" to locate hospitals near you
+            </p>
+          </div>
+        ) : (
+          nearbyHospitals.map((hospital, index) => (
+            <div
+              key={hospital.id}
+              className="bg-white rounded-lg p-6 border border-slate-200 hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-slate-900 mb-2">
+                    {index + 1}. {hospital.name}
+                  </h3>
+                  <p className="text-slate-600 mb-2">{hospital.address}</p>
+
+                  {/* Rating */}
+                  {hospital.rating && hospital.rating > 0 && (
+                    <div className="flex items-center mb-2">
+                      <div className="flex items-center">
+                        {[...Array(5)].map((_, i) => (
+                          <Star
+                            key={i}
+                            className={`h-4 w-4 ${
+                              i < Math.floor(hospital.rating!)
+                                ? 'text-yellow-400 fill-current'
+                                : 'text-slate-300'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <span className="ml-2 text-sm text-slate-600">
+                        {hospital.rating.toFixed(1)} ({hospital.user_ratings_total || 0} reviews)
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-right ml-4">
+                  <div className="text-lg font-bold text-primary-600">
+                    {hospital.distance_text || `${hospital.distance?.toFixed(1)} km`}
+                  </div>
+                  {hospital.duration_text && hospital.duration_text !== 'N/A' && (
+                    <div className="flex items-center text-sm text-slate-500 mt-1">
+                      <Clock className="h-4 w-4 mr-1" />
+                      {hospital.duration_text}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Directions Button */}
+              {hospital.directions_url && (
+                <div className="flex justify-end">
+                  <a
+                    href={hospital.directions_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-md hover:bg-primary-700 transition-colors"
+                  >
+                    <Navigation className="h-4 w-4 mr-2" />
+                    Get Directions
+                  </a>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 };
