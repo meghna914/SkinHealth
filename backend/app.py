@@ -6,9 +6,17 @@ import math
 from typing import List, Dict, Any
 import json
 import google.generativeai as genai
+from werkzeug.utils import secure_filename
+import base64
+import io
+from PIL import Image
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
+
+# Configure file upload settings
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff'}
 
 # Google API configuration
 GOOGLE_PLACES_API_KEY = 'AIzaSyDVEJAuVXSA78o8-p5MzS_F7FW56C7_BdI'
@@ -18,6 +26,84 @@ GOOGLE_DISTANCE_MATRIX_URL = 'https://maps.googleapis.com/maps/api/distancematri
 # Google AI (Gemini) configuration for chatbot
 GOOGLE_AI_API_KEY = 'AIzaSyAdaxYtbQnls5-BNp8qds8or2mgEW79Y00'
 genai.configure(api_key=GOOGLE_AI_API_KEY)
+
+# ML Model configuration (ngrok URL)
+ML_MODEL_URL = None  # Will be set dynamically from frontend
+
+def allowed_file(filename):
+    """Check if the uploaded file has an allowed extension"""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def process_image_for_ml(file):
+    """Process uploaded image for ML model prediction"""
+    try:
+        # Read the image file
+        image = Image.open(file.stream)
+
+        # Convert to RGB if necessary (for PNG with transparency, etc.)
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+
+        # Resize image if too large (optional, depends on your model requirements)
+        max_size = (1024, 1024)
+        if image.size[0] > max_size[0] or image.size[1] > max_size[1]:
+            image.thumbnail(max_size, Image.Resampling.LANCZOS)
+
+        # Convert to bytes for sending to ML model
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='JPEG', quality=95)
+        img_byte_arr.seek(0)
+
+        return img_byte_arr
+    except Exception as e:
+        print(f"Error processing image: {e}")
+        raise e
+
+def send_image_to_ml_model(image_bytes, ngrok_url):
+    """Send image to ML model hosted on ngrok and get prediction"""
+    try:
+        if not ngrok_url:
+            raise ValueError("ML model URL not configured")
+
+        # Prepare the API endpoint
+        predict_url = f"{ngrok_url.rstrip('/')}/predict"
+
+        print(f"Sending image to ML model at: {predict_url}")
+
+        # Reset the BytesIO position to the beginning
+        image_bytes.seek(0)
+
+        # Based on testing, your ML model expects 'image' parameter
+        files = {'image': ('image.jpg', image_bytes, 'image/jpeg')}
+
+        # Send POST request to ML model
+        response = requests.post(
+            predict_url,
+            files=files,
+            timeout=30  # 30 second timeout
+        )
+
+        print(f"Response status: {response.status_code}")
+        print(f"Response headers: {dict(response.headers)}")
+
+        if response.status_code == 200:
+            # Parse the response
+            result = response.json()
+            print(f"ML model response: {result}")
+            return result
+        else:
+            print(f"Response text: {response.text}")
+            raise Exception(f"HTTP {response.status_code}: {response.text}")
+
+    except requests.exceptions.Timeout:
+        raise Exception("ML model request timed out. Please check if the model server is running.")
+    except requests.exceptions.ConnectionError:
+        raise Exception("Could not connect to ML model. Please check the ngrok URL and ensure the model server is running.")
+    except Exception as e:
+        print(f"Error communicating with ML model: {e}")
+        raise e
+
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     """Calculate distance between two coordinates in kilometers (Haversine formula)"""
@@ -697,17 +783,20 @@ def health_check():
     """Health check endpoint"""
     return jsonify({
         'success': True,
-        'message': 'SkinHealth API is running with Google Places, Distance Matrix, and AI Chatbot integration',
-        'version': '4.0.0',
+        'message': 'SkinHealth API is running with Google Places, Distance Matrix, AI Chatbot, and ML Model integration',
+        'version': '5.0.0',
         'google_places_api': 'configured',
         'google_distance_matrix_api': 'configured',
         'google_ai_chatbot': 'configured',
+        'ml_model_api': 'configured' if ML_MODEL_URL else 'not configured',
+        'ml_model_url': ML_MODEL_URL,
         'features': [
             'Real hospital data from Google Places API',
             'Accurate driving distances from Distance Matrix API',
             'Turn-by-turn directions support',
             'Hospital ratings and reviews',
-            'AI-powered medical chatbot using Google Gemini'
+            'AI-powered medical chatbot using Google Gemini',
+            'Skin disease classification using ML model' + (' (configured)' if ML_MODEL_URL else ' (requires configuration)')
         ]
     })
 
@@ -719,8 +808,143 @@ def get_config():
         'google_places_api_configured': True,
         'google_distance_matrix_api_configured': True,
         'google_ai_chatbot_configured': True,
+        'ml_model_url_configured': ML_MODEL_URL is not None,
+        'ml_model_url': ML_MODEL_URL,
         'message': 'Google Places API, Distance Matrix API, and AI Chatbot are configured and ready to use'
     })
+
+@app.route('/api/ml-model/config', methods=['POST'])
+def configure_ml_model():
+    """Configure the ML model ngrok URL"""
+    global ML_MODEL_URL
+
+    try:
+        data = request.get_json()
+
+        if not data or 'ngrok_url' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'ngrok_url is required'
+            }), 400
+
+        ngrok_url = data['ngrok_url'].strip()
+
+        if not ngrok_url:
+            return jsonify({
+                'success': False,
+                'error': 'ngrok_url cannot be empty'
+            }), 400
+
+        # Validate URL format
+        if not (ngrok_url.startswith('http://') or ngrok_url.startswith('https://')):
+            return jsonify({
+                'success': False,
+                'error': 'ngrok_url must start with http:// or https://'
+            }), 400
+
+        # Test the connection to the ML model
+        try:
+            test_url = f"{ngrok_url.rstrip('/')}/predict"
+            response = requests.get(ngrok_url.rstrip('/'), timeout=10)
+            print(f"ML model URL test response: {response.status_code}")
+        except Exception as e:
+            print(f"Warning: Could not test ML model URL: {e}")
+            # Don't fail the configuration, just warn
+
+        ML_MODEL_URL = ngrok_url
+
+        return jsonify({
+            'success': True,
+            'message': 'ML model URL configured successfully',
+            'ngrok_url': ML_MODEL_URL
+        })
+
+    except Exception as e:
+        print(f"Error configuring ML model URL: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Failed to configure ML model URL: {str(e)}'
+        }), 500
+
+@app.route('/api/ml-model/config', methods=['GET'])
+def get_ml_model_config():
+    """Get current ML model configuration"""
+    return jsonify({
+        'success': True,
+        'configured': ML_MODEL_URL is not None,
+        'ngrok_url': ML_MODEL_URL,
+        'message': 'ML model configured' if ML_MODEL_URL else 'ML model not configured'
+    })
+
+@app.route('/api/predict', methods=['POST'])
+def predict_skin_condition():
+    """Handle image upload and get prediction from ML model"""
+    try:
+        print(f"Received prediction request. ML_MODEL_URL: {ML_MODEL_URL}")
+        print(f"Request files: {list(request.files.keys())}")
+        print(f"Request form: {dict(request.form)}")
+
+        # Check if ML model URL is configured
+        if not ML_MODEL_URL:
+            return jsonify({
+                'success': False,
+                'error': 'ML model URL not configured. Please configure the ngrok URL first.',
+                'requires_config': True
+            }), 400
+
+        # Check if file is present in request
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'error': 'No file uploaded. Please select an image file.',
+                'debug_info': {
+                    'available_files': list(request.files.keys()),
+                    'content_type': request.content_type
+                }
+            }), 400
+
+        file = request.files['file']
+
+        # Check if file is selected
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'error': 'No file selected. Please choose an image file.'
+            }), 400
+
+        # Check if file type is allowed
+        if not allowed_file(file.filename):
+            return jsonify({
+                'success': False,
+                'error': f'File type not allowed. Supported formats: {", ".join(ALLOWED_EXTENSIONS)}'
+            }), 400
+
+        print(f"Processing uploaded file: {file.filename}, size: {file.content_length}")
+
+        # Process the image
+        processed_image = process_image_for_ml(file)
+        print(f"Image processed successfully, size: {len(processed_image.getvalue())} bytes")
+
+        # Send to ML model
+        ml_result = send_image_to_ml_model(processed_image, ML_MODEL_URL)
+
+        # Return the result from ML model
+        return jsonify({
+            'success': True,
+            'prediction': ml_result,
+            'message': 'Image analyzed successfully',
+            'model_url': ML_MODEL_URL
+        })
+
+    except Exception as e:
+        print(f"Error in predict_skin_condition: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': f'Prediction failed: {str(e)}',
+            'requires_config': 'ML model URL not configured' in str(e)
+        }), 500
 
 @app.route('/api/test-location', methods=['POST'])
 def test_location():

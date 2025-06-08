@@ -1,4 +1,5 @@
 // Chatbot service for communicating with the backend AI chatbot API
+import { API_CONFIG } from '../config/api';
 
 export interface ChatMessage {
   id: string;
@@ -19,7 +20,7 @@ class ChatbotService {
 
   constructor() {
     // Use the same backend URL as other services
-    this.baseUrl = 'http://localhost:5000/api';
+    this.baseUrl = API_CONFIG.BASE_URL;
   }
 
   /**

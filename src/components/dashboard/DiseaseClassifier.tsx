@@ -1,5 +1,7 @@
 import { useState, useRef } from 'react';
-import { Upload, FileImage, Info, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Upload, FileImage, Info, AlertCircle, CheckCircle2, Settings } from 'lucide-react';
+import ModelConfig from './ModelConfig';
+import { buildApiUrl, API_CONFIG } from '../../config/api';
 
 type ClassificationResult = {
   condition: string;
@@ -8,52 +10,94 @@ type ClassificationResult = {
   treatment: string;
 };
 
+type MLModelResponse = {
+  success: boolean;
+  prediction?: any;
+  error?: string;
+  requires_config?: boolean;
+};
+
 const DiseaseClassifier = () => {
   const [dragging, setDragging] = useState(false);
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ClassificationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+  const [showConfig, setShowConfig] = useState(false);
+  const [requiresConfig, setRequiresConfig] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Mock classification function (in a real app, this would call an API)
+  // Real classification function that calls the backend API
   const classifySkin = async (file: File) => {
     setLoading(true);
     setError(null);
-    
+    setRequiresConfig(false);
+
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Mock result - in a real app this would come from the API
-      const mockResults: ClassificationResult[] = [
-        {
-          condition: "Eczema (Atopic Dermatitis)",
-          confidence: 0.89,
-          description: "A chronic skin condition characterized by red, itchy, and inflamed skin. Common in individuals with a history of allergies or asthma.",
-          treatment: "Topical corticosteroids, moisturizers, avoiding triggers, antihistamines for itching, and in severe cases, immunosuppressants or phototherapy."
-        },
-        {
-          condition: "Psoriasis",
-          confidence: 0.78,
-          description: "A chronic autoimmune condition causing rapid skin cell buildup, resulting in thick, red patches with silvery scales. Often occurs on elbows, knees, and scalp.",
-          treatment: "Topical treatments, phototherapy, oral medications, and biologics targeting specific parts of the immune system."
-        },
-        {
-          condition: "Acne Vulgaris",
-          confidence: 0.92,
-          description: "A common skin condition characterized by pimples, blackheads, and whiteheads due to clogged hair follicles with oil and dead skin cells.",
-          treatment: "Topical retinoids, benzoyl peroxide, antibiotics, salicylic acid, and for severe cases, oral isotretinoin or hormonal therapy."
+      // Create FormData to send the file
+      const formData = new FormData();
+      formData.append('file', file);
+
+      console.log('Sending image to backend for classification...');
+
+      // Send to backend API
+      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.PREDICT), {
+        method: 'POST',
+        body: formData
+      });
+
+      const data: MLModelResponse = await response.json();
+
+      if (data.success && data.prediction) {
+        // Transform ML model response to our expected format
+        const prediction = data.prediction;
+
+        // Parse the prediction string to extract condition name
+        let conditionName = 'Unknown Condition';
+        let conditionIndex = 0;
+
+        if (prediction.prediction && typeof prediction.prediction === 'string') {
+          // Format: "10. Warts Molluscum and other Viral Infections - 2103"
+          const predictionText = prediction.prediction;
+          const match = predictionText.match(/^(\d+)\.\s*(.+?)\s*-\s*\d+$/);
+          if (match) {
+            conditionIndex = parseInt(match[1]);
+            conditionName = match[2].trim();
+          } else {
+            conditionName = predictionText;
+          }
         }
-      ];
-      
-      // Randomly select one result
-      const randomIndex = Math.floor(Math.random() * mockResults.length);
-      setResult(mockResults[randomIndex]);
+
+        // Calculate confidence based on prediction index (this is a rough estimate)
+        // You might want to adjust this based on your model's actual confidence scoring
+        const confidence = prediction.confidence || (prediction.predicted_index ? 0.8 : 0.5);
+
+        const transformedResult: ClassificationResult = {
+          condition: conditionName,
+          confidence: confidence,
+          description: `AI analysis detected: ${conditionName}. This is an automated analysis based on image recognition.`,
+          treatment: 'Please consult with a dermatologist or healthcare professional for proper diagnosis, treatment recommendations, and medical advice. This AI analysis is for informational purposes only.'
+        };
+
+        setResult(transformedResult);
+        console.log('Classification successful:', transformedResult);
+      } else {
+        // Handle different types of errors
+        if (data.requires_config) {
+          setRequiresConfig(true);
+          setError('ML model not configured. Please configure your ngrok URL first.');
+        } else {
+          setError(data.error || 'Failed to analyze the image. Please try again.');
+        }
+      }
     } catch (err) {
       console.error('Error classifying image:', err);
-      setError('Failed to analyze the image. Please try again.');
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setError('Failed to connect to the backend. Please ensure the server is running.');
+      } else {
+        setError('Failed to analyze the image. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -126,7 +170,45 @@ const DiseaseClassifier = () => {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Skin Disease Classification</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold">Skin Disease Classification</h2>
+        <button
+          onClick={() => setShowConfig(!showConfig)}
+          className="btn btn-outline inline-flex items-center"
+        >
+          <Settings className="h-4 w-4 mr-2" />
+          {showConfig ? 'Hide Config' : 'Configure Model'}
+        </button>
+      </div>
+
+      {/* Configuration Section */}
+      {showConfig && (
+        <div className="mb-6">
+          <ModelConfig />
+        </div>
+      )}
+
+      {/* Configuration Required Warning */}
+      {requiresConfig && (
+        <div className="mb-6 bg-warning-50 border border-warning-200 rounded-lg p-4">
+          <div className="flex items-start">
+            <AlertCircle className="h-5 w-5 text-warning-600 mt-0.5 mr-2" />
+            <div>
+              <h3 className="font-semibold text-warning-800">Configuration Required</h3>
+              <p className="text-warning-700 mb-3">
+                Please configure your ML model URL before uploading images for analysis.
+              </p>
+              <button
+                onClick={() => setShowConfig(true)}
+                className="btn btn-warning inline-flex items-center"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Configure Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {!image ? (
         <div 

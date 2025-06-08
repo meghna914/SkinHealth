@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { MapPin, Star, Navigation, Clock, Search } from 'lucide-react';
+import { buildApiUrl, API_CONFIG } from '../../config/api';
 
 // Enhanced hospital type with Google Places data and accurate distances
 type Hospital = {
@@ -20,8 +21,7 @@ type Hospital = {
 
 
 
-// API base URL
-const API_BASE_URL = 'http://localhost:5000/api';
+
 
 const HospitalFinder = () => {
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
@@ -34,7 +34,7 @@ const HospitalFinder = () => {
   // Fetch nearby hospitals from API
   const fetchNearbyHospitals = async (lat: number, lng: number) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/hospitals/nearby`, {
+      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.HOSPITALS_NEARBY), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

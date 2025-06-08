@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Model Integration Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .warning { background-color: #fff3cd; border-color: #ffeaa7; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+        }
+        .upload-area {
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 10px 0;
+        }
+        .upload-area.dragover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ML Model Integration Test</h1>
+        <p>Test the backend ML model integration functionality</p>
+
+        <!-- Configuration Section -->
+        <div class="section">
+            <h2>1. Configure ML Model URL</h2>
+            <input type="text" id="ngrokUrl" placeholder="Enter your ngrok URL (e.g., https://abc123.ngrok.io)" />
+            <button onclick="configureModel()">Configure Model</button>
+            <button onclick="checkConfig()">Check Current Config</button>
+            <div id="configResult" class="result"></div>
+        </div>
+
+        <!-- Health Check Section -->
+        <div class="section">
+            <h2>2. Backend Health Check</h2>
+            <button onclick="checkHealth()">Check Backend Health</button>
+            <div id="healthResult" class="result"></div>
+        </div>
+
+        <!-- Image Upload Section -->
+        <div class="section">
+            <h2>3. Test Image Upload & Prediction</h2>
+            <div class="upload-area" id="uploadArea">
+                <p>Drag and drop an image here or click to select</p>
+                <input type="file" id="imageFile" accept="image/*" style="display: none;" />
+            </div>
+            <button onclick="uploadImage()">Upload & Predict</button>
+            <div id="uploadResult" class="result"></div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="section warning">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Start your ML model server locally</li>
+                <li>Run ngrok to expose it: <code>ngrok http 5000</code></li>
+                <li>Copy the ngrok URL and configure it above</li>
+                <li>Upload an image to test the prediction</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+
+        // Configure drag and drop
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('imageFile');
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                uploadArea.innerHTML = `<p>Selected: ${files[0].name}</p>`;
+            }
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                uploadArea.innerHTML = `<p>Selected: ${e.target.files[0].name}</p>`;
+            }
+        });
+
+        async function configureModel() {
+            const ngrokUrl = document.getElementById('ngrokUrl').value.trim();
+            const resultDiv = document.getElementById('configResult');
+            
+            if (!ngrokUrl) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'Please enter a ngrok URL';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/ml-model/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ngrok_url: ngrokUrl })
+                });
+                
+                const data = await response.json();
+                resultDiv.className = `result ${data.success ? 'success' : 'error'}`;
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function checkConfig() {
+            const resultDiv = document.getElementById('configResult');
+            
+            try {
+                const response = await fetch(`${API_BASE}/ml-model/config`);
+                const data = await response.json();
+                resultDiv.className = `result ${data.success ? 'success' : 'error'}`;
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function checkHealth() {
+            const resultDiv = document.getElementById('healthResult');
+            
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                resultDiv.className = `result ${data.success ? 'success' : 'error'}`;
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function uploadImage() {
+            const fileInput = document.getElementById('imageFile');
+            const resultDiv = document.getElementById('uploadResult');
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'Please select an image file';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                resultDiv.className = 'result warning';
+                resultDiv.textContent = 'Uploading and processing image...';
+                
+                const response = await fetch(`${API_BASE}/predict`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                resultDiv.className = `result ${data.success ? 'success' : 'error'}`;
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        // Auto-check health on page load
+        window.addEventListener('load', checkHealth);
+    </script>
+</body>
+</html>
